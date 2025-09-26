@@ -1,0 +1,13 @@
+{
+  "display_name": "Bookmarks",
+  "loading_order": 85,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "license": "AGPL-3.0",
+  "css": "style.css",
+  "author": "aikohanasaki",
+  "version": "1.0.0",
+  "homePage": "https://github.com/aikohanasaki/SillyTavern-Bookmarks",
+  "description": "A bookmark management system for SillyTavern that allows users to save and quickly navigate to specific messages in chat conversations. Bookmarks are stored in chat metadata."
+}

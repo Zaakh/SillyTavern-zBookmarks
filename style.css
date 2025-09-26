@@ -1,0 +1,135 @@
+/* --- BOOKMARKS EXTENSION STYLING --- */
+
+/* Main extension menu button */
+#st-bookmarks-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+    margin: 2px 0;
+}
+
+#st-bookmarks-menu-item:hover {
+    background: color-mix(in srgb, var(--SmartThemeBodyColor, #dcdcd2) 10%, transparent 90%);
+}
+
+#st-bookmarks-menu-item i {
+    margin-right: 8px;
+    width: 16px;
+    text-align: center;
+}
+
+/* Bookmark navigation highlight effect */
+.bookmark-highlight {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, #e18a24) 30%, transparent 70%) !important;
+    border: 2px solid var(--SmartThemeQuoteColor, #e18a24) !important;
+    border-radius: 8px !important;
+    transition: all var(--animation-duration-3x, 375ms) ease !important;
+    box-shadow: 0 0 15px color-mix(in srgb, var(--SmartThemeQuoteColor, #e18a24) 40%, transparent 60%) !important;
+    animation: st-bookmark-highlight 2s ease-out !important;
+}
+
+@keyframes st-bookmark-highlight {
+    0% {
+        box-shadow: 0 0 25px color-mix(in srgb, var(--SmartThemeQuoteColor, #e18a24) 80%, transparent 20%);
+        border-color: var(--SmartThemeQuoteColor, #e18a24);
+    }
+    50% {
+        box-shadow: 0 0 20px color-mix(in srgb, var(--SmartThemeQuoteColor, #e18a24) 60%, transparent 40%);
+        border-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #e18a24) 80%, transparent 20%);
+    }
+    100% {
+        box-shadow: 0 0 15px color-mix(in srgb, var(--SmartThemeQuoteColor, #e18a24) 40%, transparent 60%);
+        border-color: var(--SmartThemeQuoteColor, #e18a24);
+    }
+}
+
+/* --- BOOKMARKS UI STYLING --- */
+.bookmarks-container {
+    font-family: var(--mainFontFamily);
+    color: var(--SmartThemeBodyColor);
+}
+
+.bookmark-header h3 {
+    color: var(--SmartThemeQuoteColor);
+    margin: 0;
+}
+
+.bookmark-header {
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    padding-bottom: 8px;
+    margin-bottom: 12px !important;
+}
+
+/* Bookmark list styling */
+.bookmark-list {
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+/* Bookmark item container */
+.st-box {
+    border: var(--SmartThemeBorderColor) 1px solid;
+    border-radius: 6px;
+    background-color: var(--SmartThemeChatTintColor);
+}
+
+.bookmark-item {
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.bookmark-item:hover {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, #e18a24) 10%, var(--SmartThemeChatTintColor) 90%) !important;
+    transform: translateX(2px);
+}
+
+/* Bookmark content */
+.bookmark-content {
+    flex: 1;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.bookmark-content:hover {
+    color: var(--SmartThemeQuoteColor);
+}
+
+/* Bookmark action buttons */
+.bookmark-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.bookmark-actions button {
+    transition: color 0.2s ease, transform 0.1s ease;
+}
+
+.bookmark-actions button:hover {
+    transform: scale(1.2);
+}
+
+.edit-bookmark:hover {
+    color: var(--SmartThemeQuoteColor) !important;
+}
+
+.delete-bookmark:hover {
+    color: #ff4444 !important;
+}
+
+/* No bookmarks state */
+.no-bookmarks {
+    font-style: italic;
+    opacity: 0.7;
+}
+
+/* Sort toggle button styling */
+#st-sort-toggle {
+    margin: 5px;
+}
+
+/* Create bookmark button styling */
+#st-create-bookmark {
+    margin: 10px 0;
+}
