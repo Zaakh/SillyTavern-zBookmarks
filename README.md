@@ -2,14 +2,6 @@
 
 A standalone bookmark management system for SillyTavern that allows users to save and quickly navigate to specific messages in chat conversations.
 
-## Migration from STMB
-
-If you're migrating from STMemoryBooks, you can import your old bookmarks:
-1. Go to the memory lorebook and find the old STMB lorebook entry (it should be disabled and titled STMB Bookmarks.)
-2. Copy the entry (should look like `[{"messageNum":5,"title":"Title"}]`)
-3. Use the command: `/bookmark-import [{"messageNum":5,"title":"Title"}]`
-(Note: Paste the entire JSON array, there is no need to break it up!👍)
-
 ## Features
 
 - 📍 **Quick Navigation**: Save important messages and jump back to them instantly
@@ -43,6 +35,7 @@ If you're migrating from STMemoryBooks, you can import your old bookmarks:
 - Click "Create New Bookmark" in the bookmarks popup
 - Enter the message number and a descriptive title
 - Or use: `/bookmarkset <message_number> <title>`
+- Alternatively click the bookmark icon to create a new bookmark for that message.
 
 **Navigate to a Bookmark:**
 - Click on any bookmark in the list to jump to that message

@@ -1,4 +1,4 @@
-import { chat, chat_metadata, showMoreMessages } from '../../../../script.js';
+import { chat, chat_metadata, eventSource, event_types, showMoreMessages } from '../../../../script.js';
 import { saveMetadataDebounced } from '../../../extensions.js';
 import { Popup, POPUP_TYPE } from '../../../popup.js';
 import { DOMPurify, Handlebars } from '../../../../lib.js';
@@ -14,6 +14,8 @@ const CHUNK_DELAY = 10;
 
 let currentBookmarkPopup = null;
 let sortAscending = true;
+
+const MESSAGE_BOOKMARK_BUTTON_CLASS = 'st-message-bookmark-create';
 
 const bookmarksTemplate = Handlebars.compile(`
     <h3>🔖 Bookmarks ({{bookmarks.length}}/{{maxBookmarks}})</h3>
@@ -216,6 +218,54 @@ async function createBookmark(messageNum, title) {
 
     } catch (error) {
         return { success: false, error: error.message };
+    }
+}
+
+function addBookmarkMessageActions(messageId = null) {
+    const selector = messageId === null
+        ? '#chat .mes'
+        : `#chat .mes[mesid="${messageId}"]`;
+
+    document.querySelectorAll(selector).forEach((messageElement) => {
+        const extraMesButtons = messageElement.querySelector('.extraMesButtons');
+        if (!extraMesButtons || extraMesButtons.querySelector(`.${MESSAGE_BOOKMARK_BUTTON_CLASS}`)) {
+            return;
+        }
+
+        const bookmarkButton = document.createElement('div');
+        bookmarkButton.className = `mes_button ${MESSAGE_BOOKMARK_BUTTON_CLASS} fa-solid fa-book-bookmark`;
+        bookmarkButton.title = 'Create bookmark';
+        bookmarkButton.dataset.i18n = '[title]Create bookmark';
+        extraMesButtons.prepend(bookmarkButton);
+    });
+}
+
+function getDefaultBookmarkTitle(messageNum) {
+    const message = chat[messageNum];
+    const rawText = message?.mes || '';
+    const plainText = $('<div></div>').html(rawText).text().replace(/\s+/g, ' ').trim();
+
+    return plainText ? plainText.slice(0, 60) : `Message ${messageNum}`;
+}
+
+async function handleCreateBookmarkForMessage(messageNum) {
+    if (isNaN(messageNum) || messageNum < 0) {
+        toastr.error('Invalid message number', 'Bookmarks');
+        return;
+    }
+
+    const title = prompt('Enter bookmark title:', getDefaultBookmarkTitle(messageNum));
+    if (!title || !title.trim()) {
+        toastr.error('Title is required', 'Bookmarks');
+        return;
+    }
+
+    const result = await createBookmark(messageNum, title.trim());
+    if (result.success) {
+        refreshBookmarkPopup();
+        toastr.success('Bookmark created', 'Bookmarks');
+    } else {
+        toastr.error(result.error, 'Bookmarks');
     }
 }
 
@@ -769,7 +819,7 @@ menuItem.tabIndex = 0;
 
 menuItem.innerHTML = `
     <div id="bookmarks-menu-item" class="list-group-item flex-container flexGap5 interactable" tabindex="0">
-        <div class="fa-fw fa-solid fa-bookmark extensionsMenuExtensionButton"></div>
+        <div class="fa-fw fa-solid fa-book-bookmark extensionsMenuExtensionButton"></div>
         <span>Bookmarks</span>
     </div>
 `;
@@ -781,9 +831,28 @@ if (extensionsMenu) {
 
 // Add click handler
 document.addEventListener('click', function(e) {
+    const messageBookmarkButton = e.target.closest(`.${MESSAGE_BOOKMARK_BUTTON_CLASS}`);
+    if (messageBookmarkButton) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const messageElement = messageBookmarkButton.closest('.mes');
+        const messageNum = parseInt(messageElement?.getAttribute('mesid'));
+        handleCreateBookmarkForMessage(messageNum);
+        return;
+    }
+
     if (e.target.closest('#bookmarks-menu-item')) {
         showBookmarksPopup();
     }
 });
+
+eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(() => addBookmarkMessageActions(), 0));
+eventSource.on(event_types.MORE_MESSAGES_LOADED, () => addBookmarkMessageActions());
+eventSource.on(event_types.MESSAGE_UPDATED, (messageId) => addBookmarkMessageActions(messageId));
+eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, (messageId) => addBookmarkMessageActions(messageId));
+eventSource.makeLast(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => addBookmarkMessageActions(messageId));
+
+addBookmarkMessageActions();
 
 console.log('Bookmarks extension loaded');
