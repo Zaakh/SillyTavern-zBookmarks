@@ -255,7 +255,11 @@ async function handleCreateBookmarkForMessage(messageNum) {
     }
 
     const title = prompt('Enter bookmark title:', getDefaultBookmarkTitle(messageNum));
-    if (!title || !title.trim()) {
+    if (title === null) {
+        return;
+    }
+
+    if (!title.trim()) {
         toastr.error('Title is required', 'Bookmarks');
         return;
     }

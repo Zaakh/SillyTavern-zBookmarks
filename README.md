@@ -35,8 +35,7 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 - Click "Create New Bookmark" in the bookmarks popup
 - Enter the message number and a descriptive title
 - Or use: `/bookmarkset <message_number> <title>`
-- Alternatively click the bookmark icon to create a new bookmark for that message.
-
+- Alternatively, click the bookmark icon to create a new bookmark for that message.
 **Navigate to a Bookmark:**
 - Click on any bookmark in the list to jump to that message
 - Or use: `/bookmarkgo <title_or_message_number>`
