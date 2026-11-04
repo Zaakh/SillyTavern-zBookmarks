@@ -133,3 +133,25 @@
 #st-create-bookmark {
     margin: 10px 0;
 }
+/* Popup scopes, search and grouped sections */
+.stmb-scope-active {
+    border-color: var(--SmartThemeQuoteColor, #e18a24);
+    font-weight: bold;
+}
+
+.stmb-section {
+    margin: 4px 0;
+}
+
+.stmb-section > summary {
+    padding: 4px;
+}
+
+.stmb-section .stmb-section {
+    margin-left: 12px;
+}
+
+.stmb-row[hidden],
+.stmb-section[hidden] {
+    display: none;
+}

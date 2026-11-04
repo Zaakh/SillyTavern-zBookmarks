@@ -1,6 +1,8 @@
-# SillyTavern Bookmarks Extension
+# SillyTavern zBookmarks
 
 A standalone bookmark management system for SillyTavern that allows users to save and quickly navigate to specific messages in chat conversations.
+
+> **Fork notice:** zBookmarks is a fork of [aikohanasaki/SillyTavern-Bookmarks](https://github.com/aikohanasaki/SillyTavern-Bookmarks) (itself split from STMB). Upstream credit goes to aikohanasaki; the license is unchanged (AGPL-3.0). This fork adds a few adjustments, such as a bookmark button in the per-message actions, and more are planned. It can diverge from upstream, so check this README rather than the upstream one.
 
 ## Features
 
@@ -10,6 +12,7 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 - 💾 **Chat Metadata Storage**: Bookmarks are stored in chat metadata (no lorebook required)
 - ⚡ **Async Loading**: Large chat navigation uses chunked loading to prevent UI freezing
 - 🎨 **Visual Highlighting**: Bookmarked messages are highlighted when navigated to
+- 🌐 **Cross-Chat Browser**: Browse the bookmarks of this chat, this character or all chats, search them, and jump to a bookmark in another chat or character
 - 🔄 **Auto-Sorting**: Bookmarks are automatically sorted by message number
 - 🚀 **Standalone**: No dependencies on other extensions or lorebooks
 
@@ -17,7 +20,7 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 
 1. Click on "Install extension" 
 
-2. Paste the URL `https://github.com/aikohanasaki/SillyTavern-Bookmarks` in and click install
+2. Paste the URL `https://github.com/Zaakh/SillyTavern-zBookmarks` in and click install
 
 3. Restart SillyTavern
 
@@ -38,6 +41,7 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 - Alternatively, click the bookmark icon to create a new bookmark for that message.
 **Navigate to a Bookmark:**
 - Click on any bookmark in the list to jump to that message
+- Bookmarks of other chats open that character/group and chat first (the popup closes and the chat is opened)
 - Or use: `/bookmarkgo <title_or_message_number>`
 
 ### Advanced Features
@@ -46,6 +50,15 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 - 🟢 Green: Message is already loaded (instant navigation)
 - 🟡 Yellow: Message needs loading (slight wait time)
 - 🔴 Red: Heavy loading required (500+ messages to load)
+
+**Scopes and Search:**
+- Switch between **This chat** (default), **This character** and **All**; the last choice is remembered
+- **This character** lists that character's own chats (a group is its own owner, not part of its members' characters)
+- In **This character** and **All**, bookmarks are grouped by character/group, then chat. The open chat is shown first and expanded, others start collapsed with their counts
+- The search box filters by bookmark title, chat name or character/group name
+- Bookmarks of other chats are navigate-only (switch icon, no edit/delete); create, edit and delete always apply to the open chat
+- Switching chats is refused with a toast while a chat is saving or a generation is running
+- If a chat, character or group no longer exists, you get a "not found" message and can remove its entry from the index
 
 **Smart Navigation:**
 - For large chats (1000+ messages), the extension uses chunked loading
@@ -68,6 +81,8 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 - `/bookmark-import <json_array>` - Import bookmarks from JSON format
 
 ## Storage
+
+A global index of all bookmarks (title and message number per chat) is kept in the extension settings so other chats can be listed without loading them. The chat metadata stays the source of truth. A chat is indexed when it is opened or its bookmarks change, so bookmarks created earlier appear in **All** only after you open their chat once.
 
 Bookmarks are stored directly in each chat's metadata:
 - No lorebook required

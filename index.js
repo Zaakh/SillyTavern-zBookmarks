@@ -7,6 +7,10 @@ import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.j
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 
+import {
+    getIndexedChats, getOpenChatId, getOpenOwner, getScope, jumpToChatBookmark, refreshIndexEntry, setScope,
+} from './bookmark-index.js';
+
 const MAX_BOOKMARKS = 75;
 const LARGE_CHAT_THRESHOLD = 1000;
 const CHUNK_SIZE = 30;
@@ -14,11 +18,13 @@ const CHUNK_DELAY = 10;
 
 let currentBookmarkPopup = null;
 let sortAscending = true;
+let searchText = '';
+const expandedOverrides = new Map(); // section key -> open state chosen by the user; survives re-renders
 
 const MESSAGE_BOOKMARK_BUTTON_CLASS = 'st-message-bookmark-create';
 
 const bookmarksTemplate = Handlebars.compile(`
-    <h3>🔖 Bookmarks ({{bookmarks.length}}/{{maxBookmarks}})</h3>
+    <h3>🔖 Bookmarks ({{count}}/{{maxBookmarks}})</h3>
     <div class="popup-content">⚠️ Caution: going back more than 500 messages usually results in a long wait time as the chat messages need to be loaded into memory and the page has to be redrawn. Please be patient if you need to go back that far! Consider scrolling to the top of the chat and helping the extension along by clicking "Show More Messages" to load them manually. Once loaded, the chat will be responsive.</div>
 
     <div class="flex-container marginTop5" style="justify-content: center;">
@@ -27,32 +33,44 @@ const bookmarksTemplate = Handlebars.compile(`
         </button>
     </div>
 
-    <div class="popup-content marginBot10"><small>Status indicators: 🟢 = Loaded (fast), 🟡 = Loading required (slight wait), 🔴 = Heavy loading (long wait)</small></div>
+    <div class="flex-container marginTop5" style="justify-content: center;">
+        {{#each scopes}}<button class="menu_button interactable stmb-scope{{#if active}} stmb-scope-active{{/if}}" data-scope="{{id}}">{{label}}</button>{{/each}}
+    </div>
+    <input id="stmb-search" class="text_pole marginTop5" type="search" placeholder="Search title, chat or character/group" value="{{search}}">
 
-    {{#if bookmarks.length}}
-        <div class="flex-container flexFlowColumn spaceBetween">
-            {{#each bookmarks}}
-            <div class="bookmark-item flex-container alignItemsCenter padding8 marginTopBot5 stmb-box" data-message-num="{{messageNum}}" data-title="{{title}}">
-                <div title="{{loadStatus.tooltip}}" class="bookmark-content flex1 cursor-pointer marginTopBot5" data-message="{{messageNum}}">
-                    {{loadStatus.indicator}} #{{messageNum}} - {{title}}
-                </div>
-                <div class="flex-container">
-                    <button class="menu_button fa-solid fa-edit interactable edit-bookmark" data-index="{{@index}}" title="Edit bookmark"></button>
-                    <button class="menu_button fa-solid fa-trash interactable red_button delete-bookmark" data-index="{{@index}}" title="Delete bookmark"></button>
-                </div>
-            </div>
-            {{/each}}
-        </div>
+    <div class="popup-content marginBot10"><small>Status indicators: 🟢 = Loaded (fast), 🟡 = Loading required (slight wait), 🔴 = Heavy loading (long wait). <i class="fa-solid fa-right-left"></i> = bookmark in another chat (opens that chat).</small></div>
+
+    {{#if emptyText}}
+        <div class="info-block warning"><span>{{emptyText}}</span></div>
     {{else}}
-        <div class="info-block warning">
-            <span>No bookmarks found. Create your first bookmark to get started!</span>
-        </div>
+        <div class="flex-container flexFlowColumn spaceBetween">{{{list}}}</div>
     {{/if}}
     <div class="flex-container marginTop5" style="justify-content: center;">
         <button id="stmb-create-bookmark" class="menu_button menu_button_icon inline-flex interactable"><i class="fa-solid fa-plus"></i>  Create New Bookmark</button>
     </div>
 `);
 
+// Rows of the open chat keep indicator/edit/delete; rows of other chats are navigate-only.
+const rowTemplate = Handlebars.compile(`
+    <div class="bookmark-item flex-container alignItemsCenter padding8 marginTopBot5 stmb-box stmb-row" data-search="{{search}}" data-message-num="{{messageNum}}" data-title="{{title}}">
+        <div title="{{tooltip}}" class="bookmark-content flex1 cursor-pointer marginTopBot5" data-message="{{messageNum}}"{{#unless isOpen}} data-owner="{{ownerKey}}" data-chat="{{chatId}}"{{/unless}}>
+            {{#if isOpen}}{{indicator}}{{else}}<i class="fa-solid fa-right-left"></i>{{/if}} #{{messageNum}} - {{title}}
+        </div>
+        {{#if isOpen}}
+        <div class="flex-container">
+            <button class="menu_button fa-solid fa-edit interactable edit-bookmark" data-index="{{index}}" title="Edit bookmark"></button>
+            <button class="menu_button fa-solid fa-trash interactable red_button delete-bookmark" data-index="{{index}}" title="Delete bookmark"></button>
+        </div>
+        {{/if}}
+    </div>
+`);
+
+const sectionTemplate = Handlebars.compile(`
+    <details class="stmb-section" data-key="{{key}}" data-default="{{default}}"{{#if open}} open{{/if}}>
+        <summary class="cursor-pointer">{{title}} <small>({{count}})</small></summary>
+        {{{body}}}
+    </details>
+`);
 
 async function navigateToBookmarkAsync(messageNum) {
     const firstDisplayedMesId = $('#chat').children('.mes').first().attr('mesid');
@@ -165,6 +183,7 @@ async function saveBookmarks(bookmarks) {
     try {
         chat_metadata.bookmarks = bookmarks;
         saveMetadataDebounced();
+        refreshIndexEntry();
         return { success: true };
     } catch (error) {
         return { success: false, error: error.message };
@@ -381,30 +400,87 @@ function calculateLoadStatus(messageNum) {
     };
 }
 
+const SCOPES = [
+    { id: 'chat', label: 'This chat' },
+    { id: 'character', label: 'This character' },
+    { id: 'all', label: 'All' },
+];
+
+const isSectionOpen = (key, byDefault) => expandedOverrides.has(key) ? expandedOverrides.get(key) : byDefault;
+
+/** Builds the popup HTML for the current scope. The open chat always comes from live metadata, other chats from the index. */
+function renderPopupContent() {
+    const scope = getScope();
+    const owner = getOpenOwner();
+    const openChatId = getOpenChatId();
+    const live = chat_metadata?.bookmarks ?? [];
+    sortBookmarks(live, sortAscending); // in place: edit/delete indexes refer to this order
+
+    const liveRows = () => live.map((b, index) => {
+        const status = calculateLoadStatus(b.messageNum);
+        return rowTemplate({ ...b, isOpen: true, index, indicator: status.indicator, tooltip: status.tooltip,
+            search: `${b.title} ${openChatId} ${owner?.name}`.toLowerCase() });
+    }).join('');
+
+    const data = { count: live.length, maxBookmarks: MAX_BOOKMARKS, sortAscending, search: searchText,
+        scopes: SCOPES.map(sc => ({ ...sc, active: sc.id === scope })) };
+
+    if (scope === 'chat') {
+        data.list = liveRows();
+        data.emptyText = live.length ? '' : 'No bookmarks found. Create your first bookmark to get started!';
+        return bookmarksTemplate(data);
+    }
+
+    // other chats from the index, the open chat (pinned first) from live metadata
+    let chats = getIndexedChats().filter(c => !(owner && c.ownerKey === owner.key && c.chatId === openChatId));
+    if (scope === 'character') {
+        chats = owner ? chats.filter(c => c.ownerKey === owner.key) : [];
+    }
+    if (owner && live.length) chats.unshift({ ownerKey: owner.key, ownerName: owner.name, chatId: openChatId, bookmarks: live, isLive: true });
+
+    const chatSection = (c) => {
+        const rows = c.isLive ? liveRows() : [...c.bookmarks]
+            .sort((a, b) => sortAscending ? a.messageNum - b.messageNum : b.messageNum - a.messageNum)
+            .map(b => rowTemplate({ ...b, isOpen: false, ownerKey: c.ownerKey, chatId: c.chatId, tooltip: 'Opens this chat',
+                search: `${b.title} ${c.chatId} ${c.ownerName}`.toLowerCase() })).join('');
+        const key = `c:${c.ownerKey}/${c.chatId}`;
+        return sectionTemplate({ key, title: c.chatId, count: c.bookmarks.length, default: !!c.isLive, open: isSectionOpen(key, !!c.isLive), body: rows });
+    };
+
+    if (scope === 'character') {
+        data.list = chats.map(chatSection).join('');
+        data.emptyText = !owner ? 'No character or group is open.'
+            : chats.length ? '' : 'No bookmarks found for this character or group yet.';
+    } else {
+        const byOwner = new Map(); // insertion order: open owner first
+        chats.forEach(c => byOwner.set(c.ownerKey, [...(byOwner.get(c.ownerKey) ?? []), c]));
+        data.list = [...byOwner].map(([ownerKey, list]) => {
+            const key = `o:${ownerKey}`;
+            const isOwnerOpen = ownerKey === owner?.key;
+            return sectionTemplate({ key, title: list[0].ownerName, count: list.reduce((n, c) => n + c.bookmarks.length, 0),
+                default: isOwnerOpen, open: isSectionOpen(key, isOwnerOpen), body: list.map(chatSection).join('') });
+        }).join('');
+        data.emptyText = chats.length ? '' : 'No bookmarks indexed yet. Open a chat once to index its bookmarks.';
+    }
+    return bookmarksTemplate(data);
+}
+
+/** Applies the search text to the rendered rows and hides sections without a match (sections open while searching). */
+function applySearch() {
+    const dlg = currentBookmarkPopup?.dlg;
+    if (!dlg) return;
+    const needle = searchText.trim().toLowerCase();
+    dlg.querySelectorAll('.stmb-row').forEach(r => { r.hidden = !!needle && !r.dataset.search.includes(needle); });
+    [...dlg.querySelectorAll('.stmb-section')].reverse().forEach(d => { // inner sections first
+        const any = d.querySelector('.stmb-row:not([hidden]), .stmb-section:not([hidden])');
+        d.hidden = !!needle && !any;
+        // while searching, matching sections open; when cleared they return to the user's choice or the default
+        d.open = needle ? !!any || d.open : isSectionOpen(d.dataset.key, d.dataset.default === 'true');
+    });
+}
+
 async function showBookmarksPopup() {
     try {
-        const loadResult = await loadBookmarks();
-        if (!loadResult.success) {
-            toastr.error(loadResult.error, 'Bookmarks');
-            return;
-        }
-
-        const bookmarks = loadResult.bookmarks;
-        sortBookmarks(bookmarks, sortAscending);
-
-        const bookmarksWithStatus = bookmarks.map(bookmark => ({
-            ...bookmark,
-            loadStatus: calculateLoadStatus(bookmark.messageNum)
-        }));
-
-        const templateData = {
-            bookmarks: bookmarksWithStatus,
-            maxBookmarks: MAX_BOOKMARKS,
-            sortAscending: sortAscending
-        };
-
-        const content = DOMPurify.sanitize(bookmarksTemplate(templateData));
-
         const customButtons = [
             {
                 text: '🔄 Refresh',
@@ -425,9 +501,12 @@ async function showBookmarksPopup() {
             onClose: handleBookmarkPopupClose
         };
 
-        currentBookmarkPopup = new Popup(content, POPUP_TYPE.TEXT, '🔖 Bookmarks', popupOptions);
+        currentBookmarkPopup = new Popup(DOMPurify.sanitize(renderPopupContent()), POPUP_TYPE.TEXT, '🔖 Bookmarks', popupOptions);
         setupBookmarkEventListeners();
-        await currentBookmarkPopup.show();
+        applySearch();
+        const shown = currentBookmarkPopup.show();
+        if (matchMedia('(pointer: fine)').matches) currentBookmarkPopup.dlg.querySelector('#stmb-search')?.focus();
+        await shown;
 
     } catch (error) {
         toastr.error(`Failed to show bookmarks: ${error.message}`, 'Bookmarks');
@@ -473,12 +552,37 @@ function setupBookmarkEventListeners() {
             return;
         }
 
+        const scopeButton = e.target.closest('.stmb-scope');
+        if (scopeButton) {
+            setScope(scopeButton.dataset.scope);
+            refreshBookmarkPopup();
+            return;
+        }
+
         const bookmarkContent = e.target.closest('.bookmark-content');
         if (bookmarkContent) {
             const messageNum = parseInt(bookmarkContent.dataset.message);
-            handleGoToBookmark(messageNum);
+            const { owner, chat: chatId } = bookmarkContent.dataset;
+            if (owner) handleGoToOtherChatBookmark(owner, chatId, messageNum);
+            else handleGoToBookmark(messageNum);
         }
     });
+
+    popupElement.addEventListener('input', (e) => {
+        if (e.target.matches('#stmb-search')) {
+            searchText = e.target.value;
+            applySearch();
+        }
+    });
+
+    // toggle does not bubble, so listen in the capture phase; skip while searching (the search opens sections itself)
+    popupElement.addEventListener('toggle', (e) => {
+        const section = e.target;
+        if (searchText.trim() || !section.matches('.stmb-section')) return;
+        // keep only real deviations from the default, so programmatic opens never freeze a default
+        if (section.open === (section.dataset.default === 'true')) expandedOverrides.delete(section.dataset.key);
+        else expandedOverrides.set(section.dataset.key, section.open);
+    }, true);
 }
 
 async function refreshBookmarkPopup() {
@@ -487,29 +591,8 @@ async function refreshBookmarkPopup() {
     }
 
     try {
-        const loadResult = await loadBookmarks();
-        if (!loadResult.success) {
-            toastr.error(loadResult.error, 'Bookmarks');
-            return;
-        }
-
-        const bookmarks = loadResult.bookmarks;
-        sortBookmarks(bookmarks, sortAscending);
-
-        const bookmarksWithStatus = bookmarks.map(bookmark => ({
-            ...bookmark,
-            loadStatus: calculateLoadStatus(bookmark.messageNum)
-        }));
-
-        const templateData = {
-            bookmarks: bookmarksWithStatus,
-            maxBookmarks: MAX_BOOKMARKS,
-            sortAscending: sortAscending
-        };
-
-        const newHtml = DOMPurify.sanitize(bookmarksTemplate(templateData));
-
-        currentBookmarkPopup.content.innerHTML = newHtml;
+        currentBookmarkPopup.content.innerHTML = DOMPurify.sanitize(renderPopupContent());
+        applySearch();
 
         const requiredClasses = [
             'wide_dialogue_popup',
@@ -526,6 +609,7 @@ async function refreshBookmarkPopup() {
 
 function handleBookmarkPopupClose(popup) {
     currentBookmarkPopup = null;
+    searchText = '';
 }
 
 async function handleCreateBookmark() {
@@ -636,6 +720,13 @@ async function handleGoToBookmark(messageNum) {
             toastr.info(`Jumped to message ${messageNum}`, 'Bookmarks');
         }
     }
+}
+
+function handleGoToOtherChatBookmark(ownerKey, chatId, messageNum) {
+    return jumpToChatBookmark({ ownerKey, chatId, messageNum }, {
+        onStart: () => currentBookmarkPopup?.completeCancelled(),
+        navigate: navigateToBookmarkAsync,
+    });
 }
 
 function handleBookmarkSetCommand(namedArgs, unnamedArgs) {
@@ -760,6 +851,8 @@ async function handleBookmarkImportCommand(namedArgs, unnamedArgs) {
 
         chat_metadata.bookmarks = importedBookmarks;
         saveMetadataDebounced();
+        refreshIndexEntry();
+        refreshBookmarkPopup();
 
         toastr.success(`Imported ${importedBookmarks.length} bookmarks`, 'Bookmarks');
 
@@ -851,7 +944,10 @@ document.addEventListener('click', function(e) {
     }
 });
 
-eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(() => addBookmarkMessageActions(), 0));
+eventSource.on(event_types.CHAT_CHANGED, () => {
+    refreshIndexEntry();
+    setTimeout(() => addBookmarkMessageActions(), 0);
+});
 eventSource.on(event_types.MORE_MESSAGES_LOADED, () => addBookmarkMessageActions());
 eventSource.on(event_types.MESSAGE_UPDATED, (messageId) => addBookmarkMessageActions(messageId));
 eventSource.makeLast(event_types.USER_MESSAGE_RENDERED, (messageId) => addBookmarkMessageActions(messageId));
