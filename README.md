@@ -55,7 +55,8 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 - Switch between **This chat** (default), **This character** and **All**; the last choice is remembered
 - **This character** lists that character's own chats (a group is its own owner, not part of its members' characters)
 - In **This character** and **All**, bookmarks are grouped by character/group, then chat. The open chat is shown first and expanded, others start collapsed with their counts
-- The search box filters by bookmark title, chat name or character/group name
+- The search box filters by bookmark title, chat name or character/group name (case-insensitive substring)
+- Search syntax: `dragon fight` (both words, or `dragon && fight`), `dragon -boss` (or `!boss`) excludes, `dragon OR treaty` (or `||`) means either (OR binds looser than AND: `a b OR c` = `(a AND b) OR c`), `"final fight"` is an exact phrase. Only uppercase `OR` is an operator; lowercase `or` is a normal word. No parentheses.
 - Bookmarks of other chats are navigate-only (switch icon, no edit/delete); create, edit and delete always apply to the open chat
 - Switching chats is refused with a toast while a chat is saving or a generation is running
 - If a chat, character or group no longer exists, you get a "not found" message and can remove its entry from the index

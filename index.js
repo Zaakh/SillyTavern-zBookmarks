@@ -10,6 +10,7 @@ import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/Sla
 import {
     getIndexedChats, getOpenChatId, getOpenOwner, getScope, jumpToChatBookmark, refreshIndexEntry, setScope,
 } from './bookmark-index.js';
+import { matches, parseQuery } from './bookmark-search.js';
 
 const MAX_BOOKMARKS = 75;
 const LARGE_CHAT_THRESHOLD = 1000;
@@ -37,6 +38,7 @@ const bookmarksTemplate = Handlebars.compile(`
         {{#each scopes}}<button class="menu_button interactable stmb-scope{{#if active}} stmb-scope-active{{/if}}" data-scope="{{id}}">{{label}}</button>{{/each}}
     </div>
     <input id="stmb-search" class="text_pole marginTop5" type="search" placeholder="Search title, chat or character/group" value="{{search}}">
+    <small class="stmb-search-hint">Search: space = AND, <code>-word</code> = NOT, <code>a OR b</code>, <code>"exact phrase"</code></small>
 
     <div class="popup-content marginBot10"><small>Status indicators: 🟢 = Loaded (fast), 🟡 = Loading required (slight wait), 🔴 = Heavy loading (long wait). <i class="fa-solid fa-right-left"></i> = bookmark in another chat (opens that chat).</small></div>
 
@@ -469,13 +471,14 @@ function renderPopupContent() {
 function applySearch() {
     const dlg = currentBookmarkPopup?.dlg;
     if (!dlg) return;
-    const needle = searchText.trim().toLowerCase();
-    dlg.querySelectorAll('.stmb-row').forEach(r => { r.hidden = !!needle && !r.dataset.search.includes(needle); });
+    const query = parseQuery(searchText);
+    const searching = query.length > 0; // operator-only text such as "OR" has no terms and is not a search
+    dlg.querySelectorAll('.stmb-row').forEach(r => { r.hidden = !matches(query, r.dataset.search); });
     [...dlg.querySelectorAll('.stmb-section')].reverse().forEach(d => { // inner sections first
         const any = d.querySelector('.stmb-row:not([hidden]), .stmb-section:not([hidden])');
-        d.hidden = !!needle && !any;
+        d.hidden = searching && !any;
         // while searching, matching sections open; when cleared they return to the user's choice or the default
-        d.open = needle ? !!any || d.open : isSectionOpen(d.dataset.key, d.dataset.default === 'true');
+        d.open = searching ? !!any || d.open : isSectionOpen(d.dataset.key, d.dataset.default === 'true');
     });
 }
 
@@ -578,7 +581,7 @@ function setupBookmarkEventListeners() {
     // toggle does not bubble, so listen in the capture phase; skip while searching (the search opens sections itself)
     popupElement.addEventListener('toggle', (e) => {
         const section = e.target;
-        if (searchText.trim() || !section.matches('.stmb-section')) return;
+        if (parseQuery(searchText).length || !section.matches('.stmb-section')) return;
         // keep only real deviations from the default, so programmatic opens never freeze a default
         if (section.open === (section.dataset.default === 'true')) expandedOverrides.delete(section.dataset.key);
         else expandedOverrides.set(section.dataset.key, section.open);

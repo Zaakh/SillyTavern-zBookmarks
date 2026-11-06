@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Search query syntax in the popup: space = AND (`&&`), leading `-`/`!` = NOT, uppercase `OR`/`||` = alternatives, `"exact phrase"`. A hint under the search box shows it.
+
 ## 2.0.0 - 2026-11-04
 
 First release of the zBookmarks fork (split from STMB / aikohanasaki/SillyTavern-Bookmarks 1.1.0).
