@@ -7,7 +7,7 @@
   "license": "AGPL-3.0",
   "css": "style.css",
   "author": "Zaakh (fork of aikohanasaki)",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "homePage": "https://github.com/Zaakh/SillyTavern-zBookmarks",
   "description": "A bookmark management system for SillyTavern that allows users to save and quickly navigate to specific messages in chat conversations. Bookmarks are stored in chat metadata."
 }
