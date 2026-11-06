@@ -139,20 +139,29 @@
     font-weight: bold;
 }
 
-.stmb-section {
+/* skip layout of off-screen chats; the estimate (measured: 33px + 43px per row) keeps the scrollbar stable */
+.stmb-chat {
     margin: 4px 0;
+    content-visibility: auto;
+    contain-intrinsic-size: auto calc(33px + var(--stmb-rows, 1) * 43px);
 }
 
-.stmb-section > summary {
+.stmb-chat-header {
+    display: flex;
+    gap: 0.4em;
     padding: 4px;
+    font-weight: bold;
 }
 
-.stmb-section .stmb-section {
-    margin-left: 12px;
+.stmb-chat-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .stmb-row[hidden],
-.stmb-section[hidden] {
+.stmb-chat[hidden] {
     display: none;
 }
 
