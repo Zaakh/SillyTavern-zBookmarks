@@ -20,7 +20,6 @@ const CHUNK_DELAY = 10;
 let currentBookmarkPopup = null;
 let sortAscending = true;
 let searchText = '';
-const expandedOverrides = new Map(); // section key -> open state chosen by the user; survives re-renders
 
 const MESSAGE_BOOKMARK_BUTTON_CLASS = 'st-message-bookmark-create';
 
@@ -67,11 +66,12 @@ const rowTemplate = Handlebars.compile(`
     </div>
 `);
 
-const sectionTemplate = Handlebars.compile(`
-    <details class="stmb-section" data-key="{{key}}" data-default="{{default}}"{{#if open}} open{{/if}}>
-        <summary class="cursor-pointer">{{title}} <small>({{count}})</small></summary>
+// One chat: a non-collapsible header (title truncates, count stays visible) followed by its rows.
+const chatTemplate = Handlebars.compile(`
+    <div class="stmb-chat" style="--stmb-rows: {{count}}">
+        <div class="stmb-chat-header" role="heading" aria-level="4"><span class="stmb-chat-title" title="{{title}}">{{title}}</span> <small>({{count}})</small></div>
         {{{body}}}
-    </details>
+    </div>
 `);
 
 async function navigateToBookmarkAsync(messageNum) {
@@ -408,8 +408,6 @@ const SCOPES = [
     { id: 'all', label: 'All' },
 ];
 
-const isSectionOpen = (key, byDefault) => expandedOverrides.has(key) ? expandedOverrides.get(key) : byDefault;
-
 /** Builds the popup HTML for the current scope. The open chat always comes from live metadata, other chats from the index. */
 function renderPopupContent() {
     const scope = getScope();
@@ -440,46 +438,36 @@ function renderPopupContent() {
     }
     if (owner && live.length) chats.unshift({ ownerKey: owner.key, ownerName: owner.name, chatId: openChatId, bookmarks: live, isLive: true });
 
-    const chatSection = (c) => {
+    const chatBlock = (c) => {
         const rows = c.isLive ? liveRows() : [...c.bookmarks]
             .sort((a, b) => sortAscending ? a.messageNum - b.messageNum : b.messageNum - a.messageNum)
             .map(b => rowTemplate({ ...b, isOpen: false, ownerKey: c.ownerKey, chatId: c.chatId, tooltip: 'Opens this chat',
                 search: `${b.title} ${c.chatId} ${c.ownerName}`.toLowerCase() })).join('');
-        const key = `c:${c.ownerKey}/${c.chatId}`;
-        return sectionTemplate({ key, title: c.chatId, count: c.bookmarks.length, default: !!c.isLive, open: isSectionOpen(key, !!c.isLive), body: rows });
+        return chatTemplate({ title: scope === 'all' ? `${c.ownerName} › ${c.chatId}` : c.chatId, count: c.bookmarks.length, body: rows });
     };
 
     if (scope === 'character') {
-        data.list = chats.map(chatSection).join('');
+        data.list = chats.map(chatBlock).join('');
         data.emptyText = !owner ? 'No character or group is open.'
             : chats.length ? '' : 'No bookmarks found for this character or group yet.';
     } else {
-        const byOwner = new Map(); // insertion order: open owner first
+        // order only: open owner first (even when the open chat is empty), each owner's chats adjacent, open chat leading its owner
+        const byOwner = new Map();
         chats.forEach(c => byOwner.set(c.ownerKey, [...(byOwner.get(c.ownerKey) ?? []), c]));
-        data.list = [...byOwner].map(([ownerKey, list]) => {
-            const key = `o:${ownerKey}`;
-            const isOwnerOpen = ownerKey === owner?.key;
-            return sectionTemplate({ key, title: list[0].ownerName, count: list.reduce((n, c) => n + c.bookmarks.length, 0),
-                default: isOwnerOpen, open: isSectionOpen(key, isOwnerOpen), body: list.map(chatSection).join('') });
-        }).join('');
+        const ordered = [...byOwner].sort(([a], [b]) => (b === owner?.key) - (a === owner?.key)).flatMap(([, list]) => list);
+        data.list = ordered.map(chatBlock).join('');
         data.emptyText = chats.length ? '' : 'No bookmarks indexed yet. Open a chat once to index its bookmarks.';
     }
     return bookmarksTemplate(data);
 }
 
-/** Applies the search text to the rendered rows and hides sections without a match (sections open while searching). */
+/** Applies the search text to the rendered rows and hides chat blocks without a visible row. */
 function applySearch() {
     const dlg = currentBookmarkPopup?.dlg;
     if (!dlg) return;
-    const query = parseQuery(searchText);
-    const searching = query.length > 0; // operator-only text such as "OR" has no terms and is not a search
+    const query = parseQuery(searchText); // operator-only text such as "OR" has no terms, so everything matches
     dlg.querySelectorAll('.stmb-row').forEach(r => { r.hidden = !matches(query, r.dataset.search); });
-    [...dlg.querySelectorAll('.stmb-section')].reverse().forEach(d => { // inner sections first
-        const any = d.querySelector('.stmb-row:not([hidden]), .stmb-section:not([hidden])');
-        d.hidden = searching && !any;
-        // while searching, matching sections open; when cleared they return to the user's choice or the default
-        d.open = searching ? !!any || d.open : isSectionOpen(d.dataset.key, d.dataset.default === 'true');
-    });
+    dlg.querySelectorAll('.stmb-chat').forEach(c => { c.hidden = !c.querySelector('.stmb-row:not([hidden])'); });
 }
 
 async function showBookmarksPopup() {
@@ -577,15 +565,6 @@ function setupBookmarkEventListeners() {
             applySearch();
         }
     });
-
-    // toggle does not bubble, so listen in the capture phase; skip while searching (the search opens sections itself)
-    popupElement.addEventListener('toggle', (e) => {
-        const section = e.target;
-        if (parseQuery(searchText).length || !section.matches('.stmb-section')) return;
-        // keep only real deviations from the default, so programmatic opens never freeze a default
-        if (section.open === (section.dataset.default === 'true')) expandedOverrides.delete(section.dataset.key);
-        else expandedOverrides.set(section.dataset.key, section.open);
-    }, true);
 }
 
 async function refreshBookmarkPopup() {
