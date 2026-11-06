@@ -167,3 +167,26 @@
 
 /* syntax hint under the search box; wraps on narrow viewports */
 .stmb-search-hint { display: block; margin: 2px 0 5px; opacity: 0.7; }
+.stmb-search-hint code { white-space: nowrap; }
+
+/* tag chips (rows, tag bar, colour dialog); colours come from --stmb-tag / --stmb-tag-text set per chip */
+.stmb-tagbar { display: flex; gap: 4px; align-items: flex-start; margin: 4px 0; }
+.stmb-tagchips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; max-height: 6.5em; overflow-y: auto; }
+.stmb-chips { display: flex; flex-wrap: wrap; gap: 4px; flex-basis: 100%; order: 3; }
+.stmb-tag {
+    background: var(--stmb-tag);
+    color: var(--stmb-tag-text);
+    border: 2px solid transparent;
+    border-radius: 1em;
+    padding: 0 0.6em;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85em;
+}
+.stmb-tag small { opacity: 0.8; }
+.stmb-tag:disabled { color: var(--stmb-tag-text); cursor: default; }
+.stmb-tag[data-state="in"] { border-color: currentColor; font-weight: bold; }
+.stmb-tag[data-state="in"]::before { content: "#"; }
+.stmb-tag[data-state="out"] { text-decoration: line-through; opacity: 0.7; border-style: dashed; border-color: currentColor; }
+.stmb-colors { max-height: 60vh; overflow-y: auto; }
+.stmb-color-row { gap: 8px; margin: 4px 0; }

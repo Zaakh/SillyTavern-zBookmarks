@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0 - 2026-11-06
+
+### Added
+- Bookmark tags: up to 10 per bookmark, coloured chips on every row, a tag bar with counts, a colour picker, `#tag` search terms (`-#tag` to exclude), click or shift-click a chip to filter, and trailing `#tags` in `/bookmarkset`.
+
 ## 2.2.0 - 2026-11-06
 
 ### Changed

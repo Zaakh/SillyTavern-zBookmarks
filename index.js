@@ -8,9 +8,11 @@ import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 
 import {
-    getIndexedChats, getOpenChatId, getOpenOwner, getScope, jumpToChatBookmark, refreshIndexEntry, setScope,
+    getIndexedChats, getOpenChatId, getOpenOwner, getScope, getTagColors, jumpToChatBookmark, refreshIndexEntry, setScope, setTagColor,
 } from './bookmark-index.js';
-import { matches, parseQuery } from './bookmark-search.js';
+import {
+    cycleTag, formatQuery, matches, normalizeTags, parseQuery, readableText, splitTrailingTags, tagColor, tagStates,
+} from './bookmark-search.js';
 
 const MAX_BOOKMARKS = 75;
 const LARGE_CHAT_THRESHOLD = 1000;
@@ -37,7 +39,13 @@ const bookmarksTemplate = Handlebars.compile(`
         {{#each scopes}}<button class="menu_button interactable stmb-scope{{#if active}} stmb-scope-active{{/if}}" data-scope="{{id}}">{{label}}</button>{{/each}}
     </div>
     <input id="stmb-search" class="text_pole marginTop5" type="search" placeholder="Search title, chat or character/group" value="{{search}}">
-    <small class="stmb-search-hint">Search: space = AND, <code>-word</code> = NOT, <code>a OR b</code>, <code>"exact phrase"</code></small>
+    <small class="stmb-search-hint">Search: space = AND, <code>-word</code> = NOT, <code>a OR b</code>, <code>"exact phrase"</code>, <code>#tag</code> / <code>-#tag</code>. Click a tag to filter (shift-click = OR).</small>
+    {{#if tagBar}}
+    <div class="stmb-tagbar">
+        <div class="stmb-tagchips">{{{tagBar}}}</div>
+        <button id="stmb-tag-colors" class="menu_button menu_button_icon interactable stmb-tag-colors" title="Choose tag colours"><i class="fa-solid fa-palette"></i></button>
+    </div>
+    {{/if}}
 
     <div class="popup-content marginBot10"><small>Status indicators: 🟢 = Loaded (fast), 🟡 = Loading required (slight wait), 🔴 = Heavy loading (long wait). <i class="fa-solid fa-right-left"></i> = bookmark in another chat (opens that chat).</small></div>
 
@@ -53,10 +61,11 @@ const bookmarksTemplate = Handlebars.compile(`
 
 // Rows of the open chat keep indicator/edit/delete; rows of other chats are navigate-only.
 const rowTemplate = Handlebars.compile(`
-    <div class="bookmark-item flex-container alignItemsCenter padding8 marginTopBot5 stmb-box stmb-row" data-search="{{search}}" data-message-num="{{messageNum}}" data-title="{{title}}">
+    <div class="bookmark-item flex-container alignItemsCenter padding8 marginTopBot5 stmb-box stmb-row" data-search="{{search}}" data-tags="{{tagList}}" data-message-num="{{messageNum}}" data-title="{{title}}">
         <div title="{{tooltip}}" class="bookmark-content flex1 cursor-pointer marginTopBot5" data-message="{{messageNum}}"{{#unless isOpen}} data-owner="{{ownerKey}}" data-chat="{{chatId}}"{{/unless}}>
             {{#if isOpen}}{{indicator}}{{else}}<i class="fa-solid fa-right-left"></i>{{/if}} #{{messageNum}} - {{title}}
         </div>
+        {{#if chips}}<div class="stmb-chips">{{{chips}}}</div>{{/if}}
         {{#if isOpen}}
         <div class="flex-container">
             <button class="menu_button fa-solid fa-edit interactable edit-bookmark" data-index="{{index}}" title="Edit bookmark"></button>
@@ -65,6 +74,15 @@ const rowTemplate = Handlebars.compile(`
         {{/if}}
     </div>
 `);
+
+// A tag chip: toggles that tag in the search query. Name and colours are escaped/validated (settings and imports are user-editable).
+const chipTemplate = Handlebars.compile(`<button class="stmb-tag" data-tag="{{tag}}" aria-pressed="false" style="--stmb-tag: {{color}}; --stmb-tag-text: {{text}}">{{tag}}{{#if count}} <small>{{count}}</small>{{/if}}</button>`);
+
+/** Chip HTML for a tag; `count` adds the number of bookmarks (tag bar). */
+function renderChip(tag, count) {
+    const color = tagColor(tag, getTagColors());
+    return chipTemplate({ tag, color, text: readableText(color), count });
+}
 
 // One chat: a non-collapsible header (title truncates, count stays visible) followed by its rows.
 const chatTemplate = Handlebars.compile(`
@@ -192,7 +210,7 @@ async function saveBookmarks(bookmarks) {
     }
 }
 
-async function createBookmark(messageNum, title) {
+async function createBookmark(messageNum, title, tags) {
     try {
         if (typeof messageNum !== 'number' || messageNum < 0) {
             return { success: false, error: 'Invalid message number' };
@@ -223,7 +241,8 @@ async function createBookmark(messageNum, title) {
 
         const newBookmark = {
             messageNum: messageNum,
-            title: title.trim()
+            title: title.trim(),
+            ...withTags(tags)
         };
 
         bookmarks.push(newBookmark);
@@ -285,7 +304,7 @@ async function handleCreateBookmarkForMessage(messageNum) {
         return;
     }
 
-    const result = await createBookmark(messageNum, title.trim());
+    const result = await createBookmark(messageNum, title.trim(), promptTags());
     if (result.success) {
         refreshBookmarkPopup();
         toastr.success('Bookmark created', 'Bookmarks');
@@ -294,7 +313,32 @@ async function handleCreateBookmarkForMessage(messageNum) {
     }
 }
 
-async function updateBookmark(originalMessageNum, originalTitle, newMessageNum, newTitle) {
+/** `{ tags }` for a non-empty normalized list, else `{}` so bookmarks without tags keep their old shape. */
+function withTags(tags) {
+    const list = normalizeTags(tags);
+    return list.length ? { tags: list } : {};
+}
+
+/** Tags already in use: the open chat's bookmarks plus the index, most used first. */
+function countTags(bookmarkLists) {
+    const counts = new Map();
+    for (const list of bookmarkLists) for (const b of list) for (const tag of normalizeTags(b.tags)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    return [...counts].sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
+}
+
+function knownTags() {
+    return countTags([chat_metadata?.bookmarks ?? [], ...getIndexedChats().map(c => c.bookmarks)]).map(([tag]) => tag);
+}
+
+/** Asks for tags; null when cancelled. */
+function promptTags(existing = []) {
+    const known = knownTags();
+    const hint = known.length ? `\nKnown tags: ${known.join(', ')}` : '';
+    return prompt(`Enter tags, comma-separated (optional):${hint}`, existing.join(', '));
+}
+
+/** Update keeps the existing tags when `tags` is undefined; an empty list clears them. */
+async function updateBookmark(originalMessageNum, originalTitle, newMessageNum, newTitle, tags) {
     try {
         const loadResult = await loadBookmarks();
         if (!loadResult.success) {
@@ -325,7 +369,8 @@ async function updateBookmark(originalMessageNum, originalTitle, newMessageNum, 
 
         bookmarks[bookmarkIndex] = {
             messageNum: newMessageNum,
-            title: newTitle.trim()
+            title: newTitle.trim(),
+            ...withTags(tags === undefined ? bookmarks[bookmarkIndex].tags : tags)
         };
 
         bookmarks.sort((a, b) => a.messageNum - b.messageNum);
@@ -408,6 +453,17 @@ const SCOPES = [
     { id: 'all', label: 'All' },
 ];
 
+/** Row data for a bookmark's tags: space-separated names for filtering, chip HTML for display. */
+function tagView(bookmark) {
+    const tags = normalizeTags(bookmark.tags);
+    return { tagList: tags.join(' '), chips: tags.map(t => renderChip(t)).join('') };
+}
+
+/** Tag bar HTML for the bookmarks of the current scope (most used first), or '' when there are no tags. */
+function renderTagBar(bookmarkLists) {
+    return countTags(bookmarkLists).map(([tag, count]) => renderChip(tag, count)).join('');
+}
+
 /** Builds the popup HTML for the current scope. The open chat always comes from live metadata, other chats from the index. */
 function renderPopupContent() {
     const scope = getScope();
@@ -418,7 +474,7 @@ function renderPopupContent() {
 
     const liveRows = () => live.map((b, index) => {
         const status = calculateLoadStatus(b.messageNum);
-        return rowTemplate({ ...b, isOpen: true, index, indicator: status.indicator, tooltip: status.tooltip,
+        return rowTemplate({ ...b, ...tagView(b), isOpen: true, index, indicator: status.indicator, tooltip: status.tooltip,
             search: `${b.title} ${openChatId} ${owner?.name}`.toLowerCase() });
     }).join('');
 
@@ -427,6 +483,7 @@ function renderPopupContent() {
 
     if (scope === 'chat') {
         data.list = liveRows();
+        data.tagBar = renderTagBar([live]);
         data.emptyText = live.length ? '' : 'No bookmarks found. Create your first bookmark to get started!';
         return bookmarksTemplate(data);
     }
@@ -441,11 +498,12 @@ function renderPopupContent() {
     const chatBlock = (c) => {
         const rows = c.isLive ? liveRows() : [...c.bookmarks]
             .sort((a, b) => sortAscending ? a.messageNum - b.messageNum : b.messageNum - a.messageNum)
-            .map(b => rowTemplate({ ...b, isOpen: false, ownerKey: c.ownerKey, chatId: c.chatId, tooltip: 'Opens this chat',
+            .map(b => rowTemplate({ ...b, ...tagView(b), isOpen: false, ownerKey: c.ownerKey, chatId: c.chatId, tooltip: 'Opens this chat',
                 search: `${b.title} ${c.chatId} ${c.ownerName}`.toLowerCase() })).join('');
         return chatTemplate({ title: scope === 'all' ? `${c.ownerName} › ${c.chatId}` : c.chatId, count: c.bookmarks.length, body: rows });
     };
 
+    data.tagBar = renderTagBar(chats.map(c => c.bookmarks));
     if (scope === 'character') {
         data.list = chats.map(chatBlock).join('');
         data.emptyText = !owner ? 'No character or group is open.'
@@ -466,7 +524,16 @@ function applySearch() {
     const dlg = currentBookmarkPopup?.dlg;
     if (!dlg) return;
     const query = parseQuery(searchText); // operator-only text such as "OR" has no terms, so everything matches
-    dlg.querySelectorAll('.stmb-row').forEach(r => { r.hidden = !matches(query, r.dataset.search); });
+    dlg.querySelectorAll('.stmb-row').forEach(r => {
+        r.hidden = !matches(query, { text: r.dataset.search, tags: r.dataset.tags.split(' ') });
+    });
+    const states = tagStates(query);
+    dlg.querySelectorAll('.stmb-tag').forEach(chip => {
+        const state = states.get(chip.dataset.tag) ?? 'none';
+        chip.dataset.state = state;
+        chip.setAttribute('aria-pressed', String(state !== 'none'));
+        chip.title = { none: 'Click to require this tag', in: 'Required - click to exclude', out: 'Excluded - click to clear' }[state];
+    });
     dlg.querySelectorAll('.stmb-chat').forEach(c => { c.hidden = !c.querySelector('.stmb-row:not([hidden])'); });
 }
 
@@ -516,6 +583,20 @@ function setupBookmarkEventListeners() {
     const popupElement = currentBookmarkPopup.dlg;
 
     popupElement.addEventListener('click', (e) => {
+        const chip = e.target.closest('.stmb-tag');
+        if (chip) {
+            e.stopPropagation(); // a chip on a row must not navigate to the bookmark
+            searchText = formatQuery(cycleTag(parseQuery(searchText), chip.dataset.tag, { shift: e.shiftKey }));
+            popupElement.querySelector('#stmb-search').value = searchText;
+            applySearch();
+            return;
+        }
+
+        if (e.target.closest('#stmb-tag-colors')) {
+            showTagColorDialog();
+            return;
+        }
+
         if (e.target.matches('#stmb-sort-toggle')) {
             e.preventDefault();
             sortAscending = !sortAscending;
@@ -565,6 +646,29 @@ function setupBookmarkEventListeners() {
             applySearch();
         }
     });
+}
+
+/** Small dialog with one colour input per tag in the current popup; changes apply live, Reset returns to the automatic colour. */
+async function showTagColorDialog() {
+    const tags = [...currentBookmarkPopup.dlg.querySelectorAll('.stmb-tagbar .stmb-tag')].map(c => c.dataset.tag);
+    const rows = tags.map(tag => `<div class="flex-container alignItemsCenter stmb-color-row" data-tag="${DOMPurify.sanitize(tag)}">
+        <input type="color" value="${tagColor(tag, getTagColors())}" aria-label="Colour of ${DOMPurify.sanitize(tag)}">
+        <span class="flex1">${renderChip(tag)}</span>
+        <button class="menu_button interactable stmb-color-reset">Reset</button>
+    </div>`).join('');
+    const popup = new Popup(DOMPurify.sanitize(`<h3>Tag colours</h3><div class="stmb-colors">${rows}</div>`), POPUP_TYPE.TEXT, '', { okButton: 'Done', allowVerticalScrolling: true });
+    popup.dlg.querySelectorAll('.stmb-tag').forEach(chip => { chip.disabled = true; }); // preview only
+    popup.dlg.addEventListener('input', (e) => {
+        if (e.target.type === 'color') setTagColor(e.target.closest('.stmb-color-row').dataset.tag, e.target.value);
+    });
+    popup.dlg.addEventListener('click', (e) => {
+        if (!e.target.closest('.stmb-color-reset')) return;
+        const row = e.target.closest('.stmb-color-row');
+        setTagColor(row.dataset.tag, null);
+        row.querySelector('input').value = tagColor(row.dataset.tag, getTagColors());
+    });
+    await popup.show();
+    refreshBookmarkPopup();
 }
 
 async function refreshBookmarkPopup() {
@@ -626,7 +730,7 @@ async function handleCreateBookmark() {
         return;
     }
 
-    const result = await createBookmark(messageNum, title.trim());
+    const result = await createBookmark(messageNum, title.trim(), promptTags());
     if (result.success) {
         refreshBookmarkPopup();
         toastr.success('Bookmark created', 'Bookmarks');
@@ -659,7 +763,8 @@ async function handleEditBookmark(index) {
         return;
     }
 
-    const result = await updateBookmark(bookmark.messageNum, bookmark.title, newMessageNum, newTitle.trim());
+    const newTags = promptTags(bookmark.tags);
+    const result = await updateBookmark(bookmark.messageNum, bookmark.title, newMessageNum, newTitle.trim(), newTags ?? undefined);
     if (result.success) {
         refreshBookmarkPopup();
         toastr.success('Bookmark updated', 'Bookmarks');
@@ -735,13 +840,13 @@ function handleBookmarkSetCommand(namedArgs, unnamedArgs) {
         return '';
     }
 
-    const title = args.slice(1).join(' ');
+    const { title, tags } = splitTrailingTags(args.slice(1).join(' '));
     if (!title) {
         toastr.error('Title is required', 'Bookmarks');
         return '';
     }
 
-    createBookmark(messageNum, title).then(result => {
+    createBookmark(messageNum, title, tags).then(result => {
         if (result.success) {
             toastr.success(`Bookmark "${messageNum} - ${title}" created`, 'Bookmarks');
         } else {
@@ -831,7 +936,11 @@ async function handleBookmarkImportCommand(namedArgs, unnamedArgs) {
             return '';
         }
 
-        chat_metadata.bookmarks = importedBookmarks;
+        chat_metadata.bookmarks = importedBookmarks.map(b => {
+            if (!b || typeof b !== 'object') return b;
+            const { tags, ...rest } = b;
+            return { ...rest, ...withTags(tags) };
+        });
         saveMetadataDebounced();
         refreshIndexEntry();
         refreshBookmarkPopup();
@@ -848,10 +957,10 @@ async function handleBookmarkImportCommand(namedArgs, unnamedArgs) {
 SlashCommandParser.addCommandObject(SlashCommand.fromProps({
     name: 'bookmarkset',
     callback: handleBookmarkSetCommand,
-    helpString: 'Create a bookmark for a specific message',
+    helpString: 'Create a bookmark for a specific message; trailing #words become tags, e.g. /bookmarkset 5 Dragon fight #boss',
     unnamedArgumentList: [
         SlashCommandArgument.fromProps({
-            description: 'message number and title',
+            description: 'message number, title and optional #tags',
             typeList: [ARGUMENT_TYPE.STRING],
             isRequired: true,
         }),
