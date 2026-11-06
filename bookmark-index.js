@@ -11,11 +11,12 @@ import { groups, is_group_generating, openGroupById, openGroupChat, selected_gro
 const JUMP_TIMEOUT_MS = 15000;
 let jumping = false;
 
-/** Settings namespace: { scope: 'chat'|'character'|'all', index: { [ownerKey]: { name, chats: { [chatId]: [{messageNum,title}] } } } } */
+/** Settings namespace: { scope: 'chat'|'character'|'all', tagColors: { [tag]: '#rrggbb' }, index: { [ownerKey]: { name, chats: { [chatId]: [{messageNum,title,tags?}] } } } } */
 function store() {
     const s = (extension_settings.zBookmarks ??= {});
     s.scope ??= 'chat';
     s.index ??= {};
+    s.tagColors ??= {};
     return s;
 }
 
@@ -25,6 +26,17 @@ export function getScope() {
 
 export function setScope(scope) {
     store().scope = scope;
+    saveSettingsDebounced();
+}
+
+export function getTagColors() {
+    return store().tagColors;
+}
+
+/** Stores a colour override for a tag; null removes it (back to the automatic colour). */
+export function setTagColor(tag, color) {
+    if (color) store().tagColors[tag] = color;
+    else delete store().tagColors[tag];
     saveSettingsDebounced();
 }
 
@@ -55,7 +67,7 @@ export function refreshIndexEntry() {
     const chatId = getOpenChatId();
     if (!owner || !chatId) return;
 
-    const bookmarks = (chat_metadata?.bookmarks ?? []).map(({ messageNum, title }) => ({ messageNum, title }));
+    const bookmarks = (chat_metadata?.bookmarks ?? []).map(({ messageNum, title, tags }) => (tags?.length ? { messageNum, title, tags } : { messageNum, title }));
     const index = store().index;
     const before = JSON.stringify(index[owner.key]);
 

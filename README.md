@@ -57,6 +57,10 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 - In **This character** and **All**, bookmarks are listed flat under one header per chat (with the character/group name in **All** and the bookmark count). The open chat comes first, then the open character/group's other chats, then the chats of other characters/groups; searching hides headers without a match
 - The search box filters by bookmark title, chat name or character/group name (case-insensitive substring)
 - Search syntax: `dragon fight` (both words, or `dragon && fight`), `dragon -boss` (or `!boss`) excludes, `dragon OR treaty` (or `||`) means either (OR binds looser than AND: `a b OR c` = `(a AND b) OR c`), `"final fight"` is an exact phrase. Only uppercase `OR` is an operator; lowercase `or` is a normal word. No parentheses.
+- **Tags**: a bookmark can carry up to 10 tags (lowercase letters, digits, `_` and `-`, 30 characters each; anything else becomes `-`). Create and edit ask for them after the title (comma-separated; known tags are listed). Cancelling the tags prompt keeps the title; submitting it empty while editing clears the tags. `/bookmarkset 5 Dragon fight #boss #quest` takes trailing `#tags`
+- Tags show as coloured chips on every row and in a tag bar (with counts) under the search box. Each tag gets an automatic colour; the palette button opens a dialog to choose one (stored per tag for all chats in the extension settings as `tagColors`)
+- Search by tag: `#boss` matches exactly that tag, `-#boss` excludes it, and both combine with the other operators (`#boss OR #lore`). Put a term in quotes (`"#12"`) to search titles for a literal `#`
+- Click a chip (row or tag bar) to cycle the tag through the whole query: `#tag` (required, in every OR alternative), `-#tag` (excluded), removed. Shift-click adds it as an OR alternative; on touch devices type `OR`. Included chips show a `#`, excluded ones are struck through
 - Bookmarks of other chats are navigate-only (switch icon, no edit/delete); create, edit and delete always apply to the open chat
 - Switching chats is refused with a toast while a chat is saving or a generation is running
 - If a chat, character or group no longer exists, you get a "not found" message and can remove its entry from the index
@@ -79,11 +83,11 @@ A standalone bookmark management system for SillyTavern that allows users to sav
 - `/bookmarkset <message_number> <title>` - Create a new bookmark
 - `/bookmarklist` - Open the bookmarks management popup
 - `/bookmarkgo <title_or_message_number>` - Navigate to a bookmark
-- `/bookmark-import <json_array>` - Import bookmarks from JSON format
+- `/bookmark-import <json_array>` - Import bookmarks from JSON format (an optional `tags` list per bookmark is normalized)
 
 ## Storage
 
-A global index of all bookmarks (title and message number per chat) is kept in the extension settings so other chats can be listed without loading them. The chat metadata stays the source of truth. A chat is indexed when it is opened or its bookmarks change, so bookmarks created earlier appear in **All** only after you open their chat once.
+A global index of all bookmarks (title, message number and tags per chat) is kept in the extension settings so other chats can be listed without loading them. The chat metadata stays the source of truth. A chat is indexed when it is opened or its bookmarks change, so bookmarks created earlier appear in **All** only after you open their chat once.
 
 Bookmarks are stored directly in each chat's metadata:
 - No lorebook required
