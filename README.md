@@ -116,6 +116,7 @@ Bookmarks are stored directly in each chat's metadata:
 
 ## Version History
 
+- **v2.1.0**: Search query syntax (AND, NOT, OR, quoted phrases)
 - **v2.0.0**: Standalone release
   - Removed lorebook dependency
   - Added chat metadata storage

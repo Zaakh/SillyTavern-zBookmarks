@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0 - 2026-11-06
 
 ### Added
 - Search query syntax in the popup: space = AND (`&&`), leading `-`/`!` = NOT, uppercase `OR`/`||` = alternatives, `"exact phrase"`. A hint under the search box shows it.
