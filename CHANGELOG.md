@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.0 - 2026-11-06
+
+### Changed
+- This character and All scopes list bookmarks flat under one non-collapsible header per chat (open chat first, then the open owner's other chats, then other owners). Every bookmark is visible without expanding.
+
 ## 2.1.0 - 2026-11-06
 
 ### Added
