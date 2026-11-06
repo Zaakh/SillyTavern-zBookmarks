@@ -120,6 +120,7 @@ Bookmarks are stored directly in each chat's metadata:
 
 ## Version History
 
+- **v2.3.0**: Bookmark tags with colours, tag search and click-to-filter
 - **v2.2.0**: Flat bookmark list with one header per chat
 - **v2.1.0**: Search query syntax (AND, NOT, OR, quoted phrases)
 - **v2.0.0**: Standalone release
